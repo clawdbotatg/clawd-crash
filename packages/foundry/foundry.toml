@@ -4,6 +4,10 @@ out = 'out'
 libs = ['lib', 'node_modules']
 fs_permissions = [{ access = "read-write", path = "./"}]
 
+remappings = [
+  "solidity-bytes-utils/=lib/solidity-bytes-utils/contracts/"
+]
+
 
 [rpc_endpoints]
 default_network = "https://mainnet.base.org"

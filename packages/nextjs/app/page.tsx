@@ -196,7 +196,7 @@ export default function CrashGamePage() {
   const { data: crashEvents } = useScaffoldEventHistory({
     contractName: "CrashGame",
     eventName: "RoundCrashed",
-    fromBlock: 0n,
+    fromBlock: 42380000n,
     watch: true,
   });
 
