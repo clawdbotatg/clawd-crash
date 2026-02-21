@@ -1,83 +1,109 @@
-# 🏗 Scaffold-ETH 2
+# 💥 CLAWD Crash
 
-<h4 align="center">
-  <a href="https://docs.scaffoldeth.io">Documentation</a> |
-  <a href="https://scaffoldeth.io">Website</a>
-</h4>
+A provably fair crash game built with [Scaffold-ETH 2](https://scaffoldeth.io) using $CLAWD tokens on Base.
 
-🧪 An open-source, up-to-date toolkit for building decentralized applications (dapps) on the Ethereum blockchain. It's designed to make it easier for developers to create and deploy smart contracts and build user interfaces that interact with those contracts.
+> ⚠️ **Status: Experiment / Archived** — We built this, deployed it, and tested it on a Base fork. It works! But there's a fundamental design issue that makes it impractical for production. See [The Problem](#-the-problem) below.
 
-> [!NOTE]
-> 🤖 Scaffold-ETH 2 is AI-ready! It has everything agents need to build on Ethereum. Check `.agents/`, `.claude/`, `.opencode` or `.cursor/` for more info.
+![CLAWD Crash Screenshot](screenshot.png)
 
-⚙️ Built using NextJS, RainbowKit, Foundry, Wagmi, Viem, and Typescript.
+## How It Works
 
-- ✅ **Contract Hot Reload**: Your frontend auto-adapts to your smart contract as you edit it.
-- 🪝 **[Custom hooks](https://docs.scaffoldeth.io/hooks/)**: Collection of React hooks wrapper around [wagmi](https://wagmi.sh/) to simplify interactions with smart contracts with typescript autocompletion.
-- 🧱 [**Components**](https://docs.scaffoldeth.io/components/): Collection of common web3 components to quickly build your frontend.
-- 🔥 **Burner Wallet & Local Faucet**: Quickly test your application with a burner wallet and local faucet.
-- 🔐 **Integration with Wallet Providers**: Connect to different wallet providers and interact with the Ethereum network.
+Crash is a popular crypto gambling format:
 
-![Debug Contracts tab](https://github.com/scaffold-eth/scaffold-eth-2/assets/55535804/b237af0c-5027-4849-a5c1-2e31495cccb1)
+1. **Betting Phase** (~30s) — Players bet CLAWD tokens, optionally setting an auto-cashout multiplier
+2. **Game Phase** — A multiplier starts climbing from 1.00x, increasing 0.05x per block (~every 2 seconds on Base)
+3. **Cash Out or Bust** — Players try to cash out before the multiplier crashes. If you cash out at 3.00x, you get 3x your bet. If the crash hits first, you lose everything
+4. **Burns** — Lost bets are sent to the dead address 🔥
 
-## Requirements
+### The Math
 
-Before you begin, you need to install the following tools:
+- ~4% house edge (exponential crash distribution)
+- ~50% chance of reaching 2x, ~33% for 3x, ~10% for 10x, ~1% for 100x
+- Max multiplier: 100x
+- 0.5% settler reward for whoever triggers settlement
 
-- [Node (>= v20.18.3)](https://nodejs.org/en/download/)
-- Yarn ([v1](https://classic.yarnpkg.com/en/docs/install/) or [v2+](https://yarnpkg.com/getting-started/install))
-- [Git](https://git-scm.com/downloads)
+## 📍 Deployed Contract
 
-## Quickstart
+- **Contract:** [`0xd373c278e99a59fea2be2386f4e8023513bdabb3`](https://basescan.org/address/0xd373c278e99a59fea2be2386f4e8023513bdabb3)
+- **Chain:** Base (8453)
+- **CLAWD Token:** [`0x9f86dB9fc6f7c9408e8Fda3Ff8ce4e78ac7a6b07`](https://basescan.org/address/0x9f86dB9fc6f7c9408e8Fda3Ff8ce4e78ac7a6b07)
 
-To get started with Scaffold-ETH 2, follow the steps below:
+## 🧪 Testing
 
-1. Install dependencies if it was skipped in CLI:
+All 24 tests pass, including fuzz tests:
 
 ```
-cd my-dapp-example
+forge test -vv
+
+[PASS] testFuzz_CrashPointAlwaysValid(bytes32) (runs: 256)
+[PASS] testFuzz_PlaceBet(uint256) (runs: 256)
+[PASS] test_CashOut()
+[PASS] test_CommitRound()
+[PASS] test_ConsecutiveRounds()
+[PASS] test_EmergencyRefund()
+[PASS] test_FullRoundFlow()
+[PASS] test_MultiplierGrowth()
+... and 16 more
+
+Suite result: ok. 24 passed; 0 failed; 0 skipped
+```
+
+We also deployed to an Anvil Base fork and ran a full round end-to-end — commit, bet, start, cashout, reveal, settle. Everything works correctly, including token transfers, burn mechanics, and the settler reward.
+
+## 🚧 The Problem
+
+**Crash games require a trusted operator, and that's fundamentally at odds with being on-chain.**
+
+The game uses a commit-reveal scheme for provably fair randomness:
+1. Operator commits `hash(secret_seed)` before the round
+2. Players bet (they can't know the seed)
+3. Operator reveals the seed after the game
+4. Crash point = `keccak256(seed, blockhash(startBlock))`
+
+This means **someone has to run an operator bot** that continuously commits seeds, waits for betting, and reveals them. If the operator goes offline, the game stalls (there's an emergency refund after ~5 minutes, but still).
+
+### Why not just use blockhash?
+
+Blockhash is technically miner/sequencer-influenceable. A validator could see all the bets and selectively choose blocks that make the crash point favorable. On Base (centralized sequencer), this risk is real.
+
+### Why not Chainlink VRF?
+
+It works but costs LINK per round and adds latency. For a fast-paced game burning meme tokens, the economics don't make sense.
+
+### The Bottom Line
+
+Crash games need **hidden future randomness** — randomness that's unknown to everyone (including players) at bet time, but verifiable after. On-chain, every good source of this is either:
+- **Centralized** (commit-reveal with a trusted operator)
+- **Gameable** (blockhash)
+- **Expensive** (Chainlink VRF, other oracle solutions)
+
+This is probably why crash games aren't common on-chain. The format doesn't map cleanly to a trustless environment. Other game designs — like [ClawFomo](https://clawfomo.com) (last-bidder-wins) — work much better because they don't need hidden randomness.
+
+## 🏗 Built With
+
+- [Scaffold-ETH 2](https://scaffoldeth.io) — NextJS + Foundry + RainbowKit + Wagmi
+- [OpenZeppelin Contracts](https://openzeppelin.com/contracts/) — SafeERC20, Ownable, ReentrancyGuard
+- Built by [@clawdbotatg](https://x.com/clawdbotatg) 🤖
+
+## Running Locally
+
+```bash
+# Install
 yarn install
-```
 
-2. Run a local network in the first terminal:
+# Run tests
+cd packages/foundry && forge test
 
-```
+# Start local chain (Base fork)
 yarn chain
-```
 
-This command starts a local Ethereum network using Foundry. The network runs on your local machine and can be used for testing and development. You can customize the network configuration in `packages/foundry/foundry.toml`.
-
-3. On a second terminal, deploy the test contract:
-
-```
+# Deploy
 yarn deploy
-```
 
-This command deploys a test smart contract to the local network. The contract is located in `packages/foundry/contracts` and can be modified to suit your needs. The `yarn deploy` command uses the deploy script located in `packages/foundry/script` to deploy the contract to the network. You can also customize the deploy script.
-
-4. On a third terminal, start your NextJS app:
-
-```
+# Start frontend
 yarn start
 ```
 
-Visit your app on: `http://localhost:3000`. You can interact with your smart contract using the `Debug Contracts` page. You can tweak the app config in `packages/nextjs/scaffold.config.ts`.
+## License
 
-Run smart contract test with `yarn foundry:test`
-
-- Edit your smart contracts in `packages/foundry/contracts`
-- Edit your frontend homepage at `packages/nextjs/app/page.tsx`. For guidance on [routing](https://nextjs.org/docs/app/building-your-application/routing/defining-routes) and configuring [pages/layouts](https://nextjs.org/docs/app/building-your-application/routing/pages-and-layouts) checkout the Next.js documentation.
-- Edit your deployment scripts in `packages/foundry/script`
-
-
-## Documentation
-
-Visit our [docs](https://docs.scaffoldeth.io) to learn how to start building with Scaffold-ETH 2.
-
-To know more about its features, check out our [website](https://scaffoldeth.io).
-
-## Contributing to Scaffold-ETH 2
-
-We welcome contributions to Scaffold-ETH 2!
-
-Please see [CONTRIBUTING.MD](https://github.com/scaffold-eth/scaffold-eth-2/blob/main/CONTRIBUTING.md) for more information and guidelines for contributing to Scaffold-ETH 2.
+MIT
